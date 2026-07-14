@@ -1,19 +1,15 @@
 -- routing.lua
--- Increment 2 : relie le bus aux blocs et emet le bus lui-meme.
---   - Entree de bloc : SPLITTER inline sur la lane (rangee R-1), sortie droite -> belt est
---     jusqu'a la belt d'entree du bloc.
---   - Sortie de fin de chaine : belt ouest depuis le bloc, SIDE-LOAD sur la lane cible.
---   - Croisements : la LANE passe en souterrain (hop vertical), la belt horizontale reste
---     continue en surface.
--- Recoit les "net" du layout (lanes, entrees/sorties, block_x0, bus_bottom).
--- Voir specs/04 §6.
+-- Relie le bus aux blocs et emet le bus lui-meme (specs/04 §6).
+--   - Entree : splitter inline sur la lane (rangee R-1), virage, belts est jusqu'au bloc.
+--   - Sortie : belts ouest depuis le bloc, side-load sur la lane cible.
+--   - Croisement d'une lane : la LANE passe en souterrain (hop vertical).
+--   - Obstacle sur une route horizontale (splitter/belt d'une autre connexion) :
+--     PONT souterrain horizontal par-dessus.
+-- Ordre : entrees triees par rangee DECROISSANTE (une route posee ne bloque jamais un
+-- splitter futur, toujours plus haut), puis sorties.
 
 local routing = {}
 
---- Mute parts (ajoute bus + routes) ; renvoie les warnings.
----@param plan table ProductionPlan (pour meta)
----@param parts table liste de parts du layout (mutee)
----@param net table { lanes, inputs, outputs, block_x0, bus_bottom }
 function routing.run(plan, parts, net)
     local dir = defines.direction
     local warnings = {}
@@ -26,41 +22,82 @@ function routing.run(plan, parts, net)
         is_bus_col[l.x] = true
     end
 
-    -- Occupation des cellules de la zone bus/marge (hors blocs).
     local occ = {}
     local function free(x, y) return not occ[x .. "," .. y] end
     local function take(x, y) occ[x .. "," .. y] = true end
 
-    -- Chemin horizontal [x1..x2] a la rangee R : verifie, puis pose belts + marque les croisements.
-    local function route_ok(x1, x2, R)
-        for x = x1, x2 do
-            if not free(x, R) then return false end
+    local UG_MAX = plan.meta.underground_max + 1  -- distance max entree->sortie
+
+    -- Planifie un chemin horizontal [x1..x2] rangee R. Renvoie une liste d'actions ou nil.
+    -- "cross" = colonne de bus (la lane plongera) ; "ug_a"/"ug_b" = pont horizontal.
+    local function plan_hrun(x1, x2, R)
+        local actions = {}
+        local x = x1
+        while x <= x2 do
+            if free(x, R) then
+                if is_bus_col[x] and lane_events[x][R] then return nil end
+                actions[#actions + 1] = { type = is_bus_col[x] and "cross" or "belt", x = x }
+                x = x + 1
+            else
+                -- obstacle [a..b] : pont souterrain de (a-1) a (b+1)
+                local a = x
+                local b = a
+                while b <= x2 and not free(b, R) do b = b + 1 end
+                b = b - 1
+                local ein, eout = a - 1, b + 1
+                if ein < x1 or eout > x2 then return nil end
+                if (eout - ein) > UG_MAX then return nil end
+                if not free(ein, R) or not free(eout, R) then return nil end
+                if is_bus_col[ein] or is_bus_col[eout] then return nil end
+                if #actions > 0 and actions[#actions].x == ein then table.remove(actions) end
+                actions[#actions + 1] = { type = "ug_a", x = ein }
+                actions[#actions + 1] = { type = "ug_b", x = eout }
+                x = eout + 1
+            end
         end
-        return true
+        return actions
     end
-    local function route_commit(x1, x2, R, direction)
-        for x = x1, x2 do
-            take(x, R)
-            if is_bus_col[x] then lane_events[x][R] = "cross" end
-            add({ kind = "belt", name = plan.meta.belt, x = x, y = R, direction = direction })
+
+    local function commit_hrun(actions, R, direction)
+        for _, a in ipairs(actions) do
+            take(a.x, R)
+            if a.type == "belt" or a.type == "cross" then
+                if a.type == "cross" then lane_events[a.x][R] = "cross" end
+                add({ kind = "belt", name = plan.meta.belt, x = a.x, y = R, direction = direction })
+            else
+                -- ug_a = extremite ouest, ug_b = extremite est ; l'amont depend du sens du flux
+                local upstream = (a.type == "ug_a") == (direction == dir.east)
+                add({ kind = "underground", name = plan.meta.underground, x = a.x, y = R,
+                      direction = direction, ug_type = upstream and "input" or "output" })
+            end
         end
     end
 
-    -- 1. Entrees : splitter sur la lane + belt est jusqu'au bloc ------------
-    for _, inp in ipairs(net.inputs) do
+    -- 1. Entrees, rangees decroissantes --------------------------------------
+    local inputs = {}
+    for i, inp in ipairs(net.inputs) do inputs[i] = inp end
+    table.sort(inputs, function(a, b)
+        if a.row ~= b.row then return a.row > b.row end
+        return a.item < b.item
+    end)
+
+    for _, inp in ipairs(inputs) do
         local L = lane_by_item[inp.item]
         if not L then
             warnings[#warnings + 1] = inp.item .. " : pas de lane sur le bus, entree non connectee"
         else
             local R = inp.row
-            local ok = (R >= 1)
-                and free(L.x, R - 1) and free(L.x + 1, R - 1)
-                and not lane_events[L.x][R - 1]
-                and route_ok(L.x + 1, net.block_x0 - 1, R)
-            if ok then
-                take(L.x, R - 1); take(L.x + 1, R - 1)
-                lane_events[L.x][R - 1] = "splitter"
-                route_commit(L.x + 1, net.block_x0 - 1, R, dir.east)
+            local S = R - 1  -- rangee du splitter
+            local ok = (S >= 0)
+                and free(L.x, S) and free(L.x + 1, S) and not lane_events[L.x][S]
+                and free(L.x + 1, R)  -- virage
+            local actions = ok and plan_hrun(L.x + 2, net.block_x0 - 1, R) or nil
+            if actions then
+                take(L.x, S); take(L.x + 1, S)
+                lane_events[L.x][S] = "splitter"
+                take(L.x + 1, R)
+                add({ kind = "belt", name = plan.meta.belt, x = L.x + 1, y = R, direction = dir.east })
+                commit_hrun(actions, R, dir.east)
             else
                 warnings[#warnings + 1] = inp.item .. " (rangee " .. R ..
                     ") : conflit de routage, entree non connectee"
@@ -68,18 +105,18 @@ function routing.run(plan, parts, net)
         end
     end
 
-    -- 2. Sorties de fin de chaine : belt ouest + side-load sur la lane ------
+    -- 2. Sorties : belts ouest + side-load sur la lane ------------------------
     for _, out in ipairs(net.outputs) do
         local L = lane_by_item[out.item]
         if not L then
             warnings[#warnings + 1] = out.item .. " : pas de lane sur le bus, sortie non connectee"
         else
             local R = out.row
-            local ok = (not lane_events[L.x][R])   -- la cellule cible doit rester une belt sud
-                and route_ok(L.x + 1, net.block_x0 - 1, R)
-            if ok then
-                lane_events[L.x][R] = "merge"       -- reserve (emise comme belt sud normale)
-                route_commit(L.x + 1, net.block_x0 - 1, R, dir.west)
+            local actions = (not lane_events[L.x][R])
+                and plan_hrun(L.x + 1, net.block_x0 - 1, R) or nil
+            if actions then
+                lane_events[L.x][R] = "merge"  -- reste une belt sud (cible du side-load)
+                commit_hrun(actions, R, dir.west)
             else
                 warnings[#warnings + 1] = out.item .. " (rangee " .. R ..
                     ") : conflit de routage, sortie non connectee"
@@ -87,7 +124,7 @@ function routing.run(plan, parts, net)
         end
     end
 
-    -- 3. Hops : passer les lanes en souterrain aux rangees croisees ---------
+    -- 3. Hops : passer les lanes en souterrain aux rangees croisees -----------
     for _, l in ipairs(net.lanes) do
         local ev = lane_events[l.x]
         local rows = {}
@@ -101,8 +138,7 @@ function routing.run(plan, parts, net)
             while i + 1 <= #rows and rows[i + 1] == b + 1 do i = i + 1; b = rows[i] end
             i = i + 1
             local span = (b + 1) - (a - 1)
-            if a - 1 < 0 or ev[a - 1] or ev[b + 1]
-                or span > (plan.meta.underground_max + 1) then
+            if a - 1 < 0 or ev[a - 1] or ev[b + 1] or span > UG_MAX then
                 warnings[#warnings + 1] = l.item .. " : croisement non pontable (rangees "
                     .. a .. "-" .. b .. "), lane coupee"
             else
@@ -112,7 +148,7 @@ function routing.run(plan, parts, net)
         end
     end
 
-    -- 4. Emission des lanes ---------------------------------------------------
+    -- 4. Emission des lanes ----------------------------------------------------
     for _, l in ipairs(net.lanes) do
         local ev = lane_events[l.x]
         for r = 0, net.bus_bottom - 1 do
@@ -121,7 +157,7 @@ function routing.run(plan, parts, net)
                 add({ kind = "splitter", name = plan.meta.splitter, x = l.x, y = r,
                       tile_w = 2, tile_h = 1, direction = dir.south })
             elseif e == "cross" then
-                -- la belt horizontale occupe la cellule, la lane passe dessous
+                -- belt horizontale en surface, la lane passe dessous
             elseif e == "ug_in" then
                 add({ kind = "underground", name = plan.meta.underground, x = l.x, y = r,
                       direction = dir.south, ug_type = "input" })

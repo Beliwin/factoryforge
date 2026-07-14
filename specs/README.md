@@ -31,8 +31,10 @@ n'est « finie » tant que ses critères ne passent pas en jeu.
 - [x] **M3a — Layout hybride « chaînes + mini-bus » : VALIDÉ EN JEU** (2026-07-14).
       L'usine circuits verts générée **tourne en boucle fermée** (plaques injectées en haut
       du bus → circuits collectés en bas). Électricité à fournir manuellement.
-- [ ] M3b — Recettes 3-4 ingrédients (2 items/belt), machines non-3×3
-- [ ] M4 — Raffinements (électricité, multi-belt, fluides, beacons)
+- [~] M3b — Recettes **3 ingrédients** (belt sud + sortie par inséreurs longs), lanes pitch 3,
+      pontage souterrain des routes, ordre de routage descendant → **à tester en jeu**
+      (4 ingrédients : hors scope, avertissement)
+- [ ] M4 — Raffinements (électricité, multi-belt, fluides, beacons, machines non-3×3)
 
 > ⚠️ Env local : FP tourne en **zip 2.1.3 patché** (2 lignes dans `Object.lua`, cf. `99` bug FP).
 > L'original est sauvegardé en `vendor/fp-zip-backup/factoryplanner_2.1.3.ORIGINAL.zip`.

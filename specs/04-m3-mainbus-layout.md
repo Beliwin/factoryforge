@@ -51,42 +51,50 @@ Calculés dans `layout` à partir des blocs de l'IR :
 Groupes de gauche à droite : **base**, puis **partagés**, puis **finaux** — chaque groupe trié
 par nom. Stable et reproductible (2 générations ⇒ blueprint identique).
 
-## 5. Gabarit d'un bloc (M3a)
+## 5. Gabarit d'un bloc (M3a + M3b)
 
-**Routable** = machine **3×3**, **≤ 2 ingrédients** solides, **1 produit** solide.
+**Routable** = machine **3×3**, **≤ 3 ingrédients** solides (M3b), **1 produit** solide.
 Non-routable ⇒ machines posées, I/O non câblées + avertissement.
 
-Bloc de `N` machines = **une rangée**, largeur `N*3`, hauteur **8**. Deux saveurs :
+Bloc de `N` machines = **une rangée**, largeur `N*3`, hauteur **8** (≤2 ingrédients bus)
+ou **9** (3ᵉ ingrédient → belt SUD). Offsets `y` relatifs au haut :
 
-**Tête de chaîne** (toutes entrées depuis le bus) — offsets `y` relatifs au haut :
+**Tête de chaîne** (toutes entrées depuis le bus) :
 ```
-y+0 : belt entrée FAR  (ingrédient #2, si présent)      → est
-y+1 : belt entrée NEAR (ingrédient #1 = plus gros débit) → est
-y+2 : inséreurs : cols 0,2 normaux (prise y+1) ; col 1 long (prise y+0) si #2
+y+0 : belt FAR   (3e priorité : ins[2] si 2 ingr., ins[3] si 3) → est, col 1 long
+y+1 : belt NEAR  (ins[1] = plus gros débit) → est, cols 0,2 normaux
+y+2 : inséreurs d'entrée nord
 y+3..5 : machines
-y+6 : inséreurs de sortie (prise nord = machine, dépose sud = belt)
+--- si ≤ 2 ingrédients (validé M3a, inchangé) ---
+y+6 : inséreurs de sortie (3/machine, prise nord)
 y+7 : belt de SORTIE → ouest
+--- si 3 ingrédients ---
+y+6 : cols 0,2 : inséreurs SUD (prise y+7 = 2e ingrédient) ; col 1 : inséreur LONG
+      prise nord (machine) → dépose y+8 par-dessus la belt sud = SORTIE
+y+7 : belt entrée SUD (ins[2], 2 inséreurs/machine) → est
+y+8 : belt de SORTIE → ouest
 ```
+Assignation tête 3 ingr. : `near=ins[1]` (2 ins/machine), `sud=ins[2]` (2), `far=ins[3]` (1).
 
-**Bloc chaîné** (entrée directe depuis le bloc du dessus) — **partage sa rangée `y+0` avec
-la belt de sortie du bloc précédent** (le bloc commence au `y+7` du précédent → −3 rangées
-et −1 belt par jonction) :
-```
-y+0 : belt PARTAGÉE (= sortie du bloc précédent ; item direct)
-y+1 : belt entrée bus (l'éventuel 2e ingrédient) → est
-y+2 : inséreurs : cols 0,2 LONGS (prise y+0, item direct) ; col 1 normal (prise y+1) si entrée bus, sinon long
-y+3..7 : comme la tête (machines, inséreurs sortie, belt sortie)
-```
-Si les largeurs diffèrent, la belt partagée est **prolongée** à la largeur du plus large.
+**Bloc chaîné** : rangée `y+0` = belt PARTAGÉE (sortie du précédent, item direct, cols 0,2
+longs), `y+1` = belt bus n°1 (col 1 normal), et si 2e entrée bus → belt SUD `y+7` comme
+ci-dessus. Le bloc commence au rang de sortie du précédent ; belt partagée prolongée si
+le bloc est plus large.
 
-Inséreurs : `direction` = **côté de prise** (vérité terrain §8). Nord pour toutes les entrées
-(prise belt au nord, dépose machine au sud) et pour les sorties (prise machine au nord,
-dépose belt au sud).
+Inséreurs : `direction` = **côté de prise** (vérité terrain §8). Entrées nord : nord ;
+entrées sud : sud ; sorties : nord (prise machine) — le long de sortie dépose à 2 tuiles.
+
+Recettes à **4 ingrédients** : hors scope (avertissement) — nécessiterait la composition
+2 items/voie de belt, repoussée (M4).
 
 ## 6. Connexion bus ↔ bloc (incrément 2 — routing.lua)
 
-- Lanes **espacées de 2** (colonne libre à droite de chaque lane, pour les splitters).
-  Lanes **élaguées** : pas de lane pour un item sans extrémité routable.
+- Lanes **espacées de 3** (M3b — 1 colonne pour le splitter + 1 colonne franche, pour que
+  les routes horizontales puissent **ponter en souterrain** par-dessus les splitters des
+  autres lanes). Lanes **élaguées** : pas de lane pour un item sans extrémité routable.
+- **Ordre de routage : entrées triées par rangée décroissante**, puis sorties. Garantit
+  qu'une route posée à la rangée R ne bloque jamais un splitter futur (toujours plus haut),
+  et que les conflits restants se résolvent par pontage souterrain horizontal.
 - **Prise (entrée de bloc, rangée R)** : **splitter inline** sur la lane en rangée `R-1`
   (sortie gauche = la lane continue, sortie droite = belt **est** en rangée `R` jusqu'à la
   belt d'entrée du bloc). Les splitters se débordent naturellement : si le bloc est plein,
@@ -100,9 +108,10 @@ dépose belt au sud).
 
 ## 7. Débits & multi-belt
 
-- **M3a** : 1 belt par item ; dépassement de capacité ⇒ avertissement, 1 lane quand même.
-- **M3b** : multi-lane, tiers de belt selon débit ; **2 items par belt** (2 lanes physiques
-  d'une même belt, side-loading) pour les recettes à 3-4 ingrédients.
+- **M3a/b** : 1 belt par item ; dépassement de capacité ⇒ avertissement, 1 lane quand même.
+- **M4** : multi-lane, tiers de belt selon débit ; composition « 2 items par belt » si un
+  jour nécessaire (4 ingrédients) — écartée en M3b car elle exige un accès des deux côtés
+  de la belt cible, incompatible avec le gabarit compact.
 
 ## 8. Vérité terrain (validée en jeu, 2.0)
 
