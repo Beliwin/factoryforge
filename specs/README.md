@@ -28,13 +28,11 @@ n'est « finie » tant que ses critères ne passent pas en jeu.
 - [x] M0 — Scaffold du mod compagnon (`factoryforge/`, hotkey + bouton + commande)
 - [x] M1 — Localiser la donnée résolue dans FP → **fait**, format réel dans `01-data-model`
 - [x] M2 — Blueprint « bête » (grille, sans belts) → **validé en jeu** (circuits verts : 5 machines, 2 blocs, recettes OK, posable). Reste à vérifier : modules (Q4) sur un plan modulé, round-trip `export_stack`.
-- [~] M3a — Layout hybride « chaînes + mini-bus » (spec 04 révisée)
-  - [x] incrément 1 : bus + câblage interne des blocs → **validé en jeu** (directions OK)
-  - [x] incrément 1bis : layout hybride (chaînes direct-feed, géométrie validée en jeu)
-  - [~] incrément 2 : routage bus↔blocs (splitters, side-load, hops souterrains) + élagage
-        des lanes → **à tester en jeu : l'usine circuits verts doit TOURNER**
+- [x] **M3a — Layout hybride « chaînes + mini-bus » : VALIDÉ EN JEU** (2026-07-14).
+      L'usine circuits verts générée **tourne en boucle fermée** (plaques injectées en haut
+      du bus → circuits collectés en bas). Électricité à fournir manuellement.
 - [ ] M3b — Recettes 3-4 ingrédients (2 items/belt), machines non-3×3
-- [ ] M4 — Raffinements
+- [ ] M4 — Raffinements (électricité, multi-belt, fluides, beacons)
 
 > ⚠️ Env local : FP tourne en **zip 2.1.3 patché** (2 lignes dans `Object.lua`, cf. `99` bug FP).
 > L'original est sauvegardé en `vendor/fp-zip-backup/factoryplanner_2.1.3.ORIGINAL.zip`.

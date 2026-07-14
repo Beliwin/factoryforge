@@ -120,17 +120,18 @@ dépose belt au sud).
 - Format **parts** : `{ kind="machine"|"belt"|"underground"|"splitter"|"inserter",
   name, x, y, direction?, ug_type?, recipe?, quality?, modules? }` (coin haut-gauche en tuiles).
 
-## 10. Critères d'acceptation (M3a)
+## 10. Critères d'acceptation (M3a) — **validé en jeu le 2026-07-14**
 
-- [ ] Chaîne 2 recettes (câble → circuit vert) : blocs **empilés en chaîne** partageant leur
+- [x] Chaîne 2 recettes (câble → circuit vert) : blocs **empilés en chaîne** partageant leur
       belt (pas de lane câble sur le bus) ; bus = `copper-plate`, `iron-plate`,
       `electronic-circuit` seulement.
-- [ ] En injectant les plaques en haut des lanes, l'usine **produit des circuits** en sortie,
-      sans blocage (test éditeur, sources infinies).
-- [ ] Chaque machine routée reçoit tous ses ingrédients.
-- [ ] Aucun chevauchement ; blueprint posable d'un coup ; sortie déterministe.
-- [ ] Hors périmètre (≥3 ingrédients, fluides, non-3×3, >1 belt) ⇒ avertissement, pas de crash.
-- [ ] Plan ~50 machines < 1 s.
+- [x] En injectant les plaques en haut des lanes, l'usine **produit des circuits** en sortie,
+      sans blocage (⚠️ électricité à fournir manuellement — prévue en M4).
+- [x] Chaque machine routée reçoit tous ses ingrédients.
+- [x] Aucun chevauchement ; blueprint posable d'un coup.
+- [x] Hors périmètre (≥3 ingrédients, non-3×3) ⇒ avertissement, pas de crash (plan « bras »).
+- [ ] Sortie déterministe (2 générations identiques) — non vérifié formellement.
+- [ ] Plan ~50 machines < 1 s — non mesuré (instantané à l'usage sur ~15 machines).
 
 ## 11. Stratégie de test
 

@@ -120,14 +120,9 @@ function extract.run(packed)
 
     flatten(packed.top_floor, blocks, id_counter, dropped_fluids)
 
-    local meta = {
-        name = packed.name or "factory",
-        belt = DEFAULT_META.belt,
-        inserter = DEFAULT_META.inserter,
-        long_inserter = DEFAULT_META.long_inserter,
-        underground = DEFAULT_META.underground,
-        underground_max = DEFAULT_META.underground_max,
-    }
+    -- Recopie de TOUTES les cles de DEFAULT_META (evite d'oublier une entree en l'etendant).
+    local meta = { name = packed.name or "factory" }
+    for k, v in pairs(DEFAULT_META) do meta[k] = v end
 
     -- Invariants (assertions douces : on ne veut pas crasher en prod)
     for _, b in pairs(blocks) do
