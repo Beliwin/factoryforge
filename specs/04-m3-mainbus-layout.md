@@ -1,162 +1,138 @@
-# 04 — M3 : Layout main-bus (belts + inserters)
+# 04 — M3 : Layout hybride « chaînes + mini-bus »
 
-**But** : produire une usine qui **tourne réellement** — ingrédients de base injectés en haut
-d'un bus vertical, blocs de recettes qui tapent dessus, produit final récupéré en bas. Pattern
-main-bus classique, généré par heuristiques. Pas d'optimalité : **correct, lisible, buildable**.
+**But** : produire une usine qui **tourne réellement**. Layout **hybride** (révisé après essai
+du bus complet, trop coûteux : ~10 lanes pour des blocs d'1-6 machines sur un plan réel) :
 
-On découpe en **M3a** (périmètre restreint mais bouclé en jeu) puis **M3b** (généralisation).
+- **Alimentation directe (chaîne)** : un item produit par un bloc et consommé par **un seul**
+  autre bloc ne passe pas par le bus — le producteur est posé **juste au-dessus** du
+  consommateur et sa belt de sortie **est** la belt d'entrée du suivant.
+- **Mini-bus** : seuls les **ingrédients de base** (fournis de l'extérieur), les intermédiaires
+  **partagés** (≥ 2 consommateurs) et les **produits finaux** ont une lane.
+
+C'est ce qu'un joueur dessine à la main : des colonnes de production compactes qui tapent sur
+un petit bus. Découpage : **M3a** (périmètre restreint, bouclé en jeu) puis **M3b**.
 
 ---
 
 ## 1. Conventions de repère
 
 - Repère **tuiles**, `x` vers la droite, `y` vers le bas.
-- Le **bus** est un ensemble de **lanes verticales** (belts orientées **sud**, l'item descend),
-  côté gauche (`x = 0, 1, 2, …`). Une lane = 1 item = 1 tuile de large.
-- Les **blocs** de recettes sont empilés **verticalement** à droite du bus
-  (`x ≥ BUS_WIDTH + MARGIN`), un bloc par bande horizontale.
-- Sens de production = **haut → bas** : un item est *produit* plus haut qu'il n'est *consommé*.
+- **Bus** : lanes verticales (belts **sud**), côté gauche (`x = 0..nb_lanes-1`). 1 lane = 1 item.
+- **Chaînes de blocs** : empilées verticalement à droite du bus (`x ≥ nb_lanes + MARGIN`).
+  Une chaîne = suite de blocs reliés en alimentation directe, du producteur (haut) au
+  consommateur (bas). Les chaînes se succèdent verticalement (une colonne en M3a).
 
-## 2. Prérequis sur l'IR (petits ajouts à `extract`)
+## 2. Rôles des items
 
-Le layout a besoin, en plus de l'IR actuelle (`01-data-model.md`) :
+Calculés dans `layout` à partir des blocs de l'IR :
 
-- `plan.meta.products` : noms des **produits finaux** du factory (depuis `packed.products`).
-  → lanes qui *sortent* en bas du bus.
-- Rôle de chaque item, calculé dans `layout` (pas dans extract) à partir des blocs :
-  - `produced_by[item]` = bloc dont `outputs` contient l'item (au plus 1 en M3a).
-  - `consumed_by[item]` = liste des blocs dont `inputs` contient l'item.
-  - **base** = consommé mais jamais produit → entre en haut du bus (source externe = le joueur).
-  - **intermédiaire** = produit par un bloc ET consommé par un autre.
-  - **final** = dans `meta.products` → sort en bas.
+| Rôle | Définition | Traitement |
+|---|---|---|
+| **base** | consommé, jamais produit | lane de bus (injection en haut) |
+| **direct** | 1 producteur, **1 consommateur**, blocs routables des deux côtés | alimentation directe (pas de lane) |
+| **partagé** | produit ici, ≥ 2 consommateurs (ou 2 producteurs, ou direct impossible) | lane de bus |
+| **final** | produit, jamais consommé | lane de bus (sortie en bas) |
 
-## 3. Ordre des blocs (tri topologique)
+## 3. Formation des chaînes (règles)
 
-Placer un bloc produisant `X` **au-dessus** de tout bloc consommant `X`, pour que la lane de `X`
-existe (mergée sur le bus) avant d'être tapée plus bas.
+- Arête directe `A → B` possible si : l'item est mono-producteur ET mono-consommateur,
+  `A` et `B` sont **routables** (§5), `B` n'a pas déjà une entrée directe, `A` pas déjà une
+  sortie directe (≤ 1 arête entrante et sortante par bloc → les chaînes sont des **chemins**).
+- Si un bloc a plusieurs entrées candidates : choisir celle au **plus gros débit**
+  (départage par nom → déterminisme) ; les autres retombent sur le bus.
+- Comme le périmètre M3a limite à **2 ingrédients**, un bloc chaîné a au plus **1 entrée bus**.
+- Cycles éventuels (recyclage) : cassés arbitrairement + avertissement.
+- **Ordre vertical** : tri topologique des **chaînes** (graphe condensé via les items de bus :
+  la chaîne qui produit un item partagé est posée au-dessus des chaînes qui le consomment).
+  Déterministe (files triées par id).
 
-- Graphe orienté : arête `A → B` si un `output` de `A` est un `input` de `B`.
-- **Tri topologique** → ordre vertical des blocs. (FP liste souvent le produit final en premier ;
-  ne pas se fier à son ordre, recalculer.)
-- Cycles (rare : boucles de recyclage) → casser arbitrairement + `log` un avertissement.
+## 4. Ordre des lanes du bus
 
-## 4. Ordre des lanes du bus (déterministe)
-
-- Lanes de gauche à droite : d'abord les **base** (dans l'ordre d'apparition), puis les
-  **intermédiaires** (dans l'ordre des blocs producteurs), puis les **finaux**.
-- Ordre **stable et reproductible** (2 générations du même plan ⇒ blueprint identique).
-- Minimisation des croisements = **hors scope M3a** (optimisation M3b).
+Groupes de gauche à droite : **base**, puis **partagés**, puis **finaux** — chaque groupe trié
+par nom. Stable et reproductible (2 générations ⇒ blueprint identique).
 
 ## 5. Gabarit d'un bloc (M3a)
 
-**Hypothèse M3a : machines 3×3** (assembleur 1/2/3, usine électromag., usine chimique). Machines
-non-3×3 (fonderie 5×5, etc.) ⇒ posées mais **non routées + avertissement** (M3b).
+**Routable** = machine **3×3**, **≤ 2 ingrédients** solides, **1 produit** solide.
+Non-routable ⇒ machines posées, I/O non câblées + avertissement.
 
-Recette à `N` machines en **une rangée horizontale**. Offsets `y` relatifs au haut du bloc :
+Bloc de `N` machines = **une rangée**, largeur `N*3`, hauteur **8**. Deux saveurs :
 
+**Tête de chaîne** (toutes entrées depuis le bus) — offsets `y` relatifs au haut :
 ```
-y=0 : lane belt entrée ingrédient #2  (I2), horizontale
-y=1 : lane belt entrée ingrédient #1  (I1), horizontale
-y=2 : rangée d'inséreurs NORD  (pickup depuis I1/I2, drop SUD dans la machine)
-y=3..5 : les N machines 3×3, adjacentes horizontalement  (largeur = N*3)
-y=6 : rangée d'inséreurs SUD  (pickup produit machine, drop SUD sur la sortie)
-y=7 : lane belt SORTIE produit, horizontale
+y+0 : belt entrée FAR  (ingrédient #2, si présent)      → est
+y+1 : belt entrée NEAR (ingrédient #1 = plus gros débit) → est
+y+2 : inséreurs : cols 0,2 normaux (prise y+1) ; col 1 long (prise y+0) si #2
+y+3..5 : machines
+y+6 : inséreurs de sortie (prise nord = machine, dépose sud = belt)
+y+7 : belt de SORTIE → ouest
 ```
 
-**Alimentation multi-ingrédients sur le côté nord (cœur du gabarit M3a) :**
-- I1 sur `y=1` : **inséreur normal** en `y=2` (pickup 1 tuile = `y=1`).
-- I2 sur `y=0` : **inséreur longue-portée** (`long-handed-inserter`) en `y=2` (pickup 2 tuiles = `y=0`,
-  par-dessus la belt `y=1`).
-- Répartition sur les 3 colonnes d'une machine : ex. colonnes 0 et 2 → I1 (normal),
-  colonne 1 → I2 (long). Alimentation approximative mais suffisante (les machines lissent).
-- **1 seul ingrédient** ⇒ pas de lane I2, que des inséreurs normaux.
+**Bloc chaîné** (entrée directe depuis le bloc du dessus) — **partage sa rangée `y+0` avec
+la belt de sortie du bloc précédent** (le bloc commence au `y+7` du précédent → −3 rangées
+et −1 belt par jonction) :
+```
+y+0 : belt PARTAGÉE (= sortie du bloc précédent ; item direct)
+y+1 : belt entrée bus (l'éventuel 2e ingrédient) → est
+y+2 : inséreurs : cols 0,2 LONGS (prise y+0, item direct) ; col 1 normal (prise y+1) si entrée bus, sinon long
+y+3..7 : comme la tête (machines, inséreurs sortie, belt sortie)
+```
+Si les largeurs diffèrent, la belt partagée est **prolongée** à la largeur du plus large.
 
-**Sortie :** inséreur (`y=6`) prend le produit de chaque machine → dépose sur la belt `y=7`.
+Inséreurs : `direction` = **côté de prise** (vérité terrain §8). Nord pour toutes les entrées
+(prise belt au nord, dépose machine au sud) et pour les sorties (prise machine au nord,
+dépose belt au sud).
 
-→ Un bloc fait **`N*3` de large × 8 de haut**.
+## 6. Connexion bus ↔ bloc (incrément 2 — routing.lua)
 
-**Périmètre routé M3a :** recettes à **1–2 ingrédients solides** et **1 produit solide**.
-Au-delà (≥3 inputs, multi-produits, fluides) ⇒ machines posées, I/O **non routées** + `log`.
-
-## 6. Connexion bus ↔ bloc
-
-Pour chaque lane d'entrée du bloc (I1, I2) :
-- **Prise** sur la lane de bus correspondante via un **splitter** (dérive une partie du flux).
-- Une **belt horizontale** amène l'item du bus jusqu'à la lane d'entrée du bloc, en **passant en
-  souterrain** (`underground-belt`) sous chaque lane de bus / obstacle traversé
-  (respecter `meta.underground_max`).
-
-Pour la sortie du bloc (`y=7`) :
-- Belt horizontale ramène le produit vers le bus (undergrounds pour les croisements),
-- **merge** sur la lane de l'item via un splitter (ou side-load) — création de la lane si l'item
-  est un intermédiaire produit ici pour la première fois.
-
-*Détail d'implémentation du routage (placement exact des undergrounds/splitters) laissé au code ;
-la spec fixe les règles, l'acceptation se fait en jeu (usine qui tourne).*
+- **Prise (entrée bus d'un bloc)** : splitter sur la lane → belt horizontale vers la belt
+  d'entrée du bloc, **undergrounds** pour croiser les autres lanes (portée `meta.underground_max`).
+- **Rejet (sortie de fin de chaîne)** : belt de sortie → merge sur la lane de l'item
+  (partagé ou final).
+- Détail du placement exact laissé au code ; acceptation en jeu (usine qui tourne).
 
 ## 7. Débits & multi-belt
 
-- **M3a** : 1 belt par item, on suppose débit ≤ capacité de `meta.belt`. Dépassement ⇒ `log`
-  d'avertissement, 1 lane quand même.
-- **M3b** : multi-lane, choix du tier de belt selon débit, balancers.
+- **M3a** : 1 belt par item ; dépassement de capacité ⇒ avertissement, 1 lane quand même.
+- **M3b** : multi-lane, tiers de belt selon débit ; **2 items par belt** (2 lanes physiques
+  d'une même belt, side-loading) pour les recettes à 3-4 ingrédients.
 
-## 8. Entités à émettre (nouvelles pour `emit`)
+## 8. Vérité terrain (validée en jeu, 2.0)
 
-En plus des machines (M2), `emit` doit gérer :
-
-| Entité | Champs BlueprintEntity clés |
-|---|---|
-| `transport-belt` | `name`, `position`, **`direction`** (sens du flux) |
-| `underground-belt` | + **`type` = "input" \| "output"**, `direction` |
-| `splitter` | `direction`, (filtres/priorités : hors M3a) |
-| `inserter` / `long-handed-inserter` | **`direction`** = sens **pickup→drop** |
-
-> ✅ **Vérité terrain (validée en jeu, 2.0)** :
-> - `direction` : encodage **16 directions** — nord=0, **est=4**, sud=8, ouest=12.
-> - **Belt** : `direction` = sens du flux (est=4 → vers la droite).
-> - **Inserter** : `direction` = **côté de PRISE** (dépose du côté opposé !). `direction=north`
->   ⇒ prend au nord, dépose au sud. (Contre-intuitif — confirmé par test, inséreurs inversés
->   quand on met le sens de dépose.)
-> - **Underground** : champ `type = "input"` (entrée, côté amont) / `"output"` (sortie, côté aval),
->   `direction` = sens du flux.
+- `direction` : encodage **16 directions** — nord=0, **est=4**, sud=8, ouest=12.
+- **Belt** : `direction` = sens du flux.
+- **Inserter** : `direction` = **côté de PRISE** (dépose du côté opposé). `direction=north`
+  ⇒ prend au nord, dépose au sud. (Contre-intuitif — confirmé par test.)
+- **Underground** : `type = "input"` (amont) / `"output"` (aval), `direction` = sens du flux.
 
 ## 9. Structure de code
 
-- Nouveau module `layout.lua` : IR → **placement** (bus + gabarits de blocs + rôles/ordre).
-- Nouveau module `routing.lua` : ajoute belts/inséreurs/undergrounds reliant bus ↔ blocs.
-- `emit.lua` : **placement → array[BlueprintEntity]** (étendu pour les nouveaux types).
-- Format **placement** (intermédiaire, indépendant de l'API BP) :
-  ```lua
-  { kind="machine"|"belt"|"underground"|"splitter"|"inserter",
-    name=..., x=..., y=...,           -- coin haut-gauche en tuiles
-    direction=defines.direction.*,     -- si applicable
-    ug_type="input"|"output",          -- undergrounds
-    recipe=..., quality=..., modules={...} }  -- machines
-  ```
-  `emit` calcule centre + `entity_number` + `items` (modules) comme en M2.
+- `layout.lua` : IR → **parts** (rôles, chaînes, tri topo, lanes, gabarits).
+- `routing.lua` (incrément 2) : parts += splitters/undergrounds/belts bus↔blocs.
+- `emit.lua` : parts → `array[BlueprintEntity]`.
+- Format **parts** : `{ kind="machine"|"belt"|"underground"|"splitter"|"inserter",
+  name, x, y, direction?, ug_type?, recipe?, quality?, modules? }` (coin haut-gauche en tuiles).
 
 ## 10. Critères d'acceptation (M3a)
 
-- [ ] Chaîne 2 recettes (câble cuivre → circuit vert) : en injectant `copper-plate` + `iron-plate`
-      sur les lanes de base en haut, l'usine **produit `electronic-circuit`** en sortie, en
-      régime établi, **sans blocage** (test en éditeur/créatif, sources infinies sur les lanes).
-- [ ] Chaque machine routée reçoit tous ses ingrédients (aucune machine « no ingredients »).
-- [ ] Les intermédiaires produits atteignent leurs consommateurs via le bus.
-- [ ] Aucun chevauchement de collision ; blueprint posable d'un coup.
-- [ ] Sortie **déterministe** (2 générations identiques).
-- [ ] Recettes hors périmètre (≥3 inputs, fluides, machine non 3×3, débit > 1 belt) ⇒
-      **avertissement** clair, pas de plantage.
-- [ ] Génération d'un plan ~50 machines en < 1 s.
+- [ ] Chaîne 2 recettes (câble → circuit vert) : blocs **empilés en chaîne** partageant leur
+      belt (pas de lane câble sur le bus) ; bus = `copper-plate`, `iron-plate`,
+      `electronic-circuit` seulement.
+- [ ] En injectant les plaques en haut des lanes, l'usine **produit des circuits** en sortie,
+      sans blocage (test éditeur, sources infinies).
+- [ ] Chaque machine routée reçoit tous ses ingrédients.
+- [ ] Aucun chevauchement ; blueprint posable d'un coup ; sortie déterministe.
+- [ ] Hors périmètre (≥3 ingrédients, fluides, non-3×3, >1 belt) ⇒ avertissement, pas de crash.
+- [ ] Plan ~50 machines < 1 s.
 
 ## 11. Stratégie de test
 
-- **Boucle fermée en éditeur** : `/editor`, poser des `infinity-chest`/`infinity-loader` ou des
-  sources infinies alimentant les lanes de base en haut du bus ; observer la sortie en bas.
-- **Cas de référence versionnés** : circuits verts (2 recettes), science rouge (3-4 recettes) —
-  tests de non-régression manuels documentés.
-- **Vérité terrain directions** (§8) : mini-blueprint manuel belt+inséreur+underground → dump.
+- **Boucle fermée en éditeur** : sources infinies sur les lanes de base, observer la sortie.
+- **Cas de référence** : circuits verts (1 chaîne de 2 + bus 3 lanes) ; plan « bras » (chaînes
+  + recettes 3 ingrédients → avertissements attendus).
 
-## 12. Hors scope M3a → M3b
+## 12. Hors scope M3a → M3b/M4
 
-Machines non-3×3, recettes ≥3 inputs / multi-produits, fluides & tuyaux, multi-belt, beacons,
-électricité, minimisation des croisements de lanes, compaction du layout, priorités de splitters.
+Recettes ≥3 ingrédients (→ 2 items/belt), machines non-3×3, fluides, multi-belt, beacons,
+électricité, multi-colonnes de chaînes, insertion directe machine-à-machine (sans belt),
+minimisation des croisements, priorités de splitters.

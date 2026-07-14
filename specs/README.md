@@ -28,8 +28,9 @@ n'est « finie » tant que ses critères ne passent pas en jeu.
 - [x] M0 — Scaffold du mod compagnon (`factoryforge/`, hotkey + bouton + commande)
 - [x] M1 — Localiser la donnée résolue dans FP → **fait**, format réel dans `01-data-model`
 - [x] M2 — Blueprint « bête » (grille, sans belts) → **validé en jeu** (circuits verts : 5 machines, 2 blocs, recettes OK, posable). Reste à vérifier : modules (Q4) sur un plan modulé, round-trip `export_stack`.
-- [~] M3a — Main-bus + belts + inserters
-  - [~] incrément 1 : bus + câblage interne des blocs (géométrie/directions) → **à tester en jeu**
+- [~] M3a — Layout hybride « chaînes + mini-bus » (spec 04 révisée)
+  - [x] incrément 1 : bus + câblage interne des blocs → **validé en jeu** (directions OK)
+  - [~] incrément 1bis : layout hybride (chaînes direct-feed + bus réduit) → **à tester en jeu**
   - [ ] incrément 2 : routage bus↔blocs (splitters/undergrounds) → boucle fermée
 - [ ] M4 — Raffinements
 
