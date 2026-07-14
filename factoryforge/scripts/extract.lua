@@ -11,6 +11,7 @@ local DEFAULT_META = {
     inserter = "inserter",
     long_inserter = "long-handed-inserter",
     underground = "underground-belt",
+    splitter = "splitter",
     underground_max = 4,  -- portee du underground jaune
 }
 

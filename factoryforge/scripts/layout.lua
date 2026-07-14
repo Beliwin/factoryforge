@@ -1,8 +1,10 @@
 -- layout.lua
--- IR ProductionPlan --> "parts" (placement en tuiles). Layout hybride "chaines + mini-bus" :
+-- IR ProductionPlan --> "parts" (placement en tuiles) + "net" (points de connexion pour routing).
+-- Layout hybride "chaines + mini-bus" :
 --   - item mono-producteur/mono-consommateur => alimentation directe (blocs empiles, belt partagee)
---   - base / partages / finaux => lanes de bus
--- Cablage interne des blocs inclus ; routage bus<->bloc = increment 2 (routing.lua).
+--   - base / partages / finaux => lanes de bus (espacees de 2 pour les splitters, elaguees si
+--     aucune extremite routable)
+-- Cablage interne des blocs ; le bus lui-meme et le routage bus<->bloc sont emis par routing.lua.
 -- Ne connait que l'IR (specs/01) + defines.direction. Voir specs/04.
 
 local layout = {}
@@ -22,7 +24,7 @@ local function sorted_inputs(b)
     return ins
 end
 
---- IR --> parts (+ warnings).
+--- IR --> parts, warnings, net.
 function layout.run(plan)
     local dir = defines.direction
     local warnings = {}
@@ -65,7 +67,6 @@ function layout.run(plan)
     end
 
     -- 3. Aretes d'alimentation directe --------------------------------------
-    -- item mono-producteur ET mono-consommateur, blocs routables, <=1 arete in/out par bloc.
     local direct_in, direct_out, direct_item = {}, {}, {}
     for _, b in ipairs(plan.blocks) do
         if routable[b.id] then
@@ -126,9 +127,9 @@ function layout.run(plan)
             if pid and not direct_item[inp.item] then
                 local from, to = chain_of[pid], chain_of[b.id]
                 if from and to and from ~= to then
-                    local key = from .. ">" .. to
-                    if not seen_edge[key] then
-                        seen_edge[key] = true
+                    local k = from .. ">" .. to
+                    if not seen_edge[k] then
+                        seen_edge[k] = true
                         table.insert(adj[from], to)
                         indeg[to] = indeg[to] + 1
                     end
@@ -148,7 +149,7 @@ function layout.run(plan)
         end
         table.sort(queue)
     end
-    if #ordered < #chains then  -- cycles entre chaines : completer dans l'ordre
+    if #ordered < #chains then
         local placed = {}
         for _, c in ipairs(ordered) do placed[c] = true end
         for ci = 1, #chains do
@@ -156,9 +157,9 @@ function layout.run(plan)
         end
     end
 
-    -- 6. Lanes de bus : base | partages | finaux (chaque groupe trie) -------
-    local roles = {}  -- item -> "base"|"inter"|"final" (les items directs sont exclus)
-    for item, cons in pairs(consumers) do
+    -- 6. Lanes de bus : base | partages | finaux, elaguees, espacees de 2 ---
+    local roles = {}
+    for item in pairs(consumers) do
         if not direct_item[item] then
             roles[item] = produced_by[item] and "inter" or "base"
         end
@@ -166,19 +167,37 @@ function layout.run(plan)
     for item in pairs(produced_by) do
         if not consumers[item] and not direct_item[item] then roles[item] = "final" end
     end
+    -- elagage : lane utile seulement si >=1 extremite routable
+    local function lane_useful(item)
+        local pid = produced_by[item]
+        if pid and routable[pid] then return true end
+        for _, cid in ipairs(consumers[item] or {}) do
+            if routable[cid] then return true end
+        end
+        return false
+    end
     local groups = { base = {}, inter = {}, final = {} }
-    for item, role in pairs(roles) do table.insert(groups[role], item) end
+    for item, role in pairs(roles) do
+        if lane_useful(item) then
+            table.insert(groups[role], item)
+        else
+            warnings[#warnings + 1] = item .. " : aucune extremite routable, pas de lane"
+        end
+    end
     table.sort(groups.base); table.sort(groups.inter); table.sort(groups.final)
-    local lanes = {}  -- array { item=, x= } , ordre = position
+    local lanes = {}
     for _, g in ipairs({ groups.base, groups.inter, groups.final }) do
-        for _, item in ipairs(g) do lanes[#lanes + 1] = { item = item, x = #lanes } end
+        for _, item in ipairs(g) do
+            lanes[#lanes + 1] = { item = item, x = 2 * #lanes }  -- espacement 2 (splitters)
+        end
     end
 
-    -- 7. Emission de la geometrie -------------------------------------------
+    -- 7. Emission des blocs ---------------------------------------------------
     local parts = {}
     local function add(p) parts[#parts + 1] = p end
-    local block_x0 = #lanes + MARGIN
-    local y = 0
+    local block_x0 = (#lanes > 0) and (2 * #lanes + MARGIN) or MARGIN
+    local net = { lanes = lanes, inputs = {}, outputs = {}, block_x0 = block_x0 }
+    local y = 1  -- rangee 0 reservee (splitter d'une entree en rangee 1)
 
     local function emit_belt_row(x0, row, width, direction)
         for cx = 0, width - 1 do
@@ -191,9 +210,8 @@ function layout.run(plan)
         for idx, b in ipairs(chain) do
             local head = (idx == 1)
             local width = b.count * M
-            local by = y  -- pour un bloc chaine, y == rangee de la belt de sortie du precedent
+            local by = y
 
-            -- Machines (communes aux deux saveurs, et aux blocs non routables)
             for i = 0, b.count - 1 do
                 add({ kind = "machine", name = b.machine.name,
                       x = block_x0 + i * M, y = by + 3,
@@ -204,32 +222,36 @@ function layout.run(plan)
 
             if routable[b.id] then
                 local ins = sorted_inputs(b)
-                local far_pick, near_pick  -- rangees de prise pour col 1 / cols 0,2
+                local far_pick, near_pick
 
                 if head then
-                    -- Tete : entrees bus. NEAR (y+1) = ins[1], FAR (y+0) = ins[2] eventuel.
-                    if ins[1] then emit_belt_row(block_x0, by + 1, width, dir.east) end
-                    if ins[2] then emit_belt_row(block_x0, by + 0, width, dir.east) end
+                    if ins[1] then
+                        emit_belt_row(block_x0, by + 1, width, dir.east)
+                        net.inputs[#net.inputs + 1] = { item = ins[1].item, row = by + 1 }
+                    end
+                    if ins[2] then
+                        emit_belt_row(block_x0, by + 0, width, dir.east)
+                        net.inputs[#net.inputs + 1] = { item = ins[2].item, row = by + 0 }
+                    end
                     near_pick = ins[1] and (by + 1) or nil
                     far_pick = ins[2] and (by + 0) or nil
                 else
-                    -- Chaine : belt partagee en y+0 (posee par le precedent), a prolonger si plus large.
                     if width > prev_width then
                         emit_belt_row(block_x0 + prev_width, by, width - prev_width, dir.west)
                     end
-                    -- Entree bus eventuelle (l'input qui n'est pas l'item direct) en y+1.
                     local bus_input = nil
                     for _, inp in ipairs(ins) do
                         if inp.item ~= direct_in[b.id].item then bus_input = inp end
                     end
-                    if bus_input then emit_belt_row(block_x0, by + 1, width, dir.east) end
-                    -- cols 0,2 prennent l'item direct (y+0, longs) ; col 1 le bus (y+1) sinon direct.
+                    if bus_input then
+                        emit_belt_row(block_x0, by + 1, width, dir.east)
+                        net.inputs[#net.inputs + 1] = { item = bus_input.item, row = by + 1 }
+                    end
                     far_pick = by + 0
                     near_pick = bus_input and (by + 1) or nil
                 end
 
-                -- Inserters d'entree (y+2). Prise au nord => direction nord.
-                -- cols 0,2 -> near en tete / far en chaine ; col 1 -> l'autre rangee.
+                -- Inserters d'entree (y+2), direction = cote de prise (nord).
                 for i = 0, b.count - 1 do
                     for col = 0, M - 1 do
                         local px = block_x0 + i * M + col
@@ -248,7 +270,7 @@ function layout.run(plan)
                     end
                 end
 
-                -- Sortie : inserters (y+6, prise nord = machine) + belt (y+7, vers l'ouest).
+                -- Sortie : inserters (y+6) + belt (y+7, vers l'ouest).
                 for i = 0, b.count - 1 do
                     for col = 0, M - 1 do
                         add({ kind = "inserter", name = plan.meta.inserter,
@@ -256,23 +278,22 @@ function layout.run(plan)
                     end
                 end
                 emit_belt_row(block_x0, by + 7, width, dir.west)
+
+                -- Fin de chaine : la sortie doit rejoindre le bus.
+                if not direct_out[b.id] then
+                    net.outputs[#net.outputs + 1] = { item = b.outputs[1].item, row = by + 7 }
+                end
             end
 
             prev_width = width
-            y = by + 7  -- la belt de sortie devient la rangee 0 du bloc chaine suivant
+            y = by + 7
         end
-        y = y + 1 + CHAIN_GAP  -- fin de chaine : passer la belt de sortie + ecart
+        y = y + 1 + CHAIN_GAP
     end
 
-    -- 8. Lanes du bus (flux sud), sur toute la hauteur -----------------------
-    local bus_bottom = math.max(y - CHAIN_GAP, 8)
-    for _, lane in ipairs(lanes) do
-        for yy = 0, bus_bottom - 1 do
-            add({ kind = "belt", name = plan.meta.belt, x = lane.x, y = yy, direction = dir.south })
-        end
-    end
+    net.bus_bottom = math.max(y - CHAIN_GAP + 2, 10)
 
-    return parts, warnings
+    return parts, warnings, net
 end
 
 return layout

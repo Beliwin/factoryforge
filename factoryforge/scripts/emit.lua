@@ -40,16 +40,15 @@ function emit.run(parts)
         n = n + 1
         local e = { entity_number = n, name = p.name }
 
+        -- Position = centre, depuis le coin haut-gauche et les dimensions (1x1 par defaut).
+        local w, h = p.tile_w or 1, p.tile_h or 1
+        e.position = { x = p.x + w / 2, y = p.y + h / 2 }
+
         if p.kind == "machine" then
-            local w, h = p.tile_w, p.tile_h
-            e.position = { x = p.x + w / 2, y = p.y + h / 2 }
             if p.accepts_recipe ~= false then e.recipe = p.recipe end
             if p.quality and p.quality ~= "normal" then e.quality = p.quality end
             local mods = build_module_items(p.modules)
             if mods then e.items = mods end
-        else
-            -- Entites 1x1 (belt, underground, inserter)
-            e.position = { x = p.x + 0.5, y = p.y + 0.5 }
         end
 
         if p.direction and p.direction ~= north then e.direction = p.direction end

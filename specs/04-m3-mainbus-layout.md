@@ -85,11 +85,18 @@ dépose belt au sud).
 
 ## 6. Connexion bus ↔ bloc (incrément 2 — routing.lua)
 
-- **Prise (entrée bus d'un bloc)** : splitter sur la lane → belt horizontale vers la belt
-  d'entrée du bloc, **undergrounds** pour croiser les autres lanes (portée `meta.underground_max`).
-- **Rejet (sortie de fin de chaîne)** : belt de sortie → merge sur la lane de l'item
-  (partagé ou final).
-- Détail du placement exact laissé au code ; acceptation en jeu (usine qui tourne).
+- Lanes **espacées de 2** (colonne libre à droite de chaque lane, pour les splitters).
+  Lanes **élaguées** : pas de lane pour un item sans extrémité routable.
+- **Prise (entrée de bloc, rangée R)** : **splitter inline** sur la lane en rangée `R-1`
+  (sortie gauche = la lane continue, sortie droite = belt **est** en rangée `R` jusqu'à la
+  belt d'entrée du bloc). Les splitters se débordent naturellement : si le bloc est plein,
+  tout continue sur la lane.
+- **Rejet (sortie de fin de chaîne, rangée R)** : belts **ouest** depuis le bloc jusqu'à la
+  colonne `lane.x+1`, puis **side-load** sur la belt sud de la lane (pas de splitter).
+- **Croisements** : c'est **la lane qui passe en souterrain** (hop vertical `ug_in`/`ug_out`
+  autour des rangées croisées, croisements consécutifs groupés, portée `meta.underground_max`),
+  la belt horizontale reste continue en surface.
+- Conflits de cellules (occupancy grid) → connexion abandonnée + **avertissement** (pas de crash).
 
 ## 7. Débits & multi-belt
 

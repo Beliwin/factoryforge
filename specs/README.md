@@ -30,8 +30,10 @@ n'est « finie » tant que ses critères ne passent pas en jeu.
 - [x] M2 — Blueprint « bête » (grille, sans belts) → **validé en jeu** (circuits verts : 5 machines, 2 blocs, recettes OK, posable). Reste à vérifier : modules (Q4) sur un plan modulé, round-trip `export_stack`.
 - [~] M3a — Layout hybride « chaînes + mini-bus » (spec 04 révisée)
   - [x] incrément 1 : bus + câblage interne des blocs → **validé en jeu** (directions OK)
-  - [~] incrément 1bis : layout hybride (chaînes direct-feed + bus réduit) → **à tester en jeu**
-  - [ ] incrément 2 : routage bus↔blocs (splitters/undergrounds) → boucle fermée
+  - [x] incrément 1bis : layout hybride (chaînes direct-feed, géométrie validée en jeu)
+  - [~] incrément 2 : routage bus↔blocs (splitters, side-load, hops souterrains) + élagage
+        des lanes → **à tester en jeu : l'usine circuits verts doit TOURNER**
+- [ ] M3b — Recettes 3-4 ingrédients (2 items/belt), machines non-3×3
 - [ ] M4 — Raffinements
 
 > ⚠️ Env local : FP tourne en **zip 2.1.3 patché** (2 lignes dans `Object.lua`, cf. `99` bug FP).

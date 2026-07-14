@@ -3,6 +3,7 @@
 
 local extract = require("scripts.extract")
 local layout = require("scripts.layout")
+local routing = require("scripts.routing")
 local emit = require("scripts.emit")
 
 local generator = {}
@@ -34,7 +35,9 @@ function generator.run(player)
         return
     end
 
-    local parts, warnings = layout.run(plan)
+    local parts, warnings, net = layout.run(plan)
+    local _, route_warnings = routing.run(plan, parts, net)
+    for _, w in ipairs(route_warnings) do warnings[#warnings + 1] = w end
     local entities = emit.run(parts)
     if #entities == 0 then
         player.print("[FactoryForge] Rien a poser (0 entite generee).")
