@@ -111,10 +111,14 @@ En plus des machines (M2), `emit` doit gérer :
 | `splitter` | `direction`, (filtres/priorités : hors M3a) |
 | `inserter` / `long-handed-inserter` | **`direction`** = sens **pickup→drop** |
 
-> ⚠️ **Vérité terrain requise (comme Q4)** : le sens exact de `direction` pour belts, inséreurs
-> (pickup vs drop) et le `type` des undergrounds doivent être **validés en jeu** (poser à la main,
-> lire `get_blueprint_entities`). C'est la source d'erreurs n°1 du routage. À faire avant/pendant
-> l'implémentation M3a.
+> ✅ **Vérité terrain (validée en jeu, 2.0)** :
+> - `direction` : encodage **16 directions** — nord=0, **est=4**, sud=8, ouest=12.
+> - **Belt** : `direction` = sens du flux (est=4 → vers la droite).
+> - **Inserter** : `direction` = **côté de PRISE** (dépose du côté opposé !). `direction=north`
+>   ⇒ prend au nord, dépose au sud. (Contre-intuitif — confirmé par test, inséreurs inversés
+>   quand on met le sens de dépose.)
+> - **Underground** : champ `type = "input"` (entrée, côté amont) / `"output"` (sortie, côté aval),
+>   `direction` = sens du flux.
 
 ## 9. Structure de code
 

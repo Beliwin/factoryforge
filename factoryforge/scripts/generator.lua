@@ -2,6 +2,7 @@
 -- Orchestre : FP remote --> extract --> emit --> blueprint dans la main du joueur.
 
 local extract = require("scripts.extract")
+local layout = require("scripts.layout")
 local emit = require("scripts.emit")
 
 local generator = {}
@@ -33,11 +34,16 @@ function generator.run(player)
         return
     end
 
-    local entities = emit.run(plan)
+    local parts, warnings = layout.run(plan)
+    local entities = emit.run(parts)
     if #entities == 0 then
         player.print("[FactoryForge] Rien a poser (0 entite generee).")
         return
     end
+
+    -- Compte les machines pour le message.
+    local machines = 0
+    for _, p in ipairs(parts) do if p.kind == "machine" then machines = machines + 1 end end
 
     -- Met un blueprint dans le curseur du joueur.
     local stack = player.cursor_stack
@@ -50,9 +56,13 @@ function generator.run(player)
     stack.set_blueprint_entities(entities)
     stack.label = plan.meta.name
 
-    local msg = string.format("[FactoryForge] Blueprint genere : %d machines, %d blocs.",
-        #entities, #plan.blocks)
-    player.print(msg)
+    player.print(string.format("[FactoryForge] Blueprint genere : %d machines, %d blocs, %d entites.",
+        machines, #plan.blocks, #entities))
+
+    -- Avertissements de layout (recettes hors perimetre M3a).
+    for _, w in ipairs(warnings or {}) do
+        player.print("[FactoryForge] " .. w)
+    end
 
     -- Avertit si des fluides ont ete ignores (non routes en v1).
     local fluids = {}

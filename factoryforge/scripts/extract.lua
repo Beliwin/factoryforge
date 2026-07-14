@@ -9,6 +9,8 @@ local extract = {}
 local DEFAULT_META = {
     belt = "transport-belt",
     inserter = "inserter",
+    long_inserter = "long-handed-inserter",
+    underground = "underground-belt",
     underground_max = 4,  -- portee du underground jaune
 }
 
@@ -121,6 +123,8 @@ function extract.run(packed)
         name = packed.name or "factory",
         belt = DEFAULT_META.belt,
         inserter = DEFAULT_META.inserter,
+        long_inserter = DEFAULT_META.long_inserter,
+        underground = DEFAULT_META.underground,
         underground_max = DEFAULT_META.underground_max,
     }
 

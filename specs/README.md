@@ -28,7 +28,9 @@ n'est « finie » tant que ses critères ne passent pas en jeu.
 - [x] M0 — Scaffold du mod compagnon (`factoryforge/`, hotkey + bouton + commande)
 - [x] M1 — Localiser la donnée résolue dans FP → **fait**, format réel dans `01-data-model`
 - [x] M2 — Blueprint « bête » (grille, sans belts) → **validé en jeu** (circuits verts : 5 machines, 2 blocs, recettes OK, posable). Reste à vérifier : modules (Q4) sur un plan modulé, round-trip `export_stack`.
-- [ ] M3 — Main-bus + belts + inserters
+- [~] M3a — Main-bus + belts + inserters
+  - [~] incrément 1 : bus + câblage interne des blocs (géométrie/directions) → **à tester en jeu**
+  - [ ] incrément 2 : routage bus↔blocs (splitters/undergrounds) → boucle fermée
 - [ ] M4 — Raffinements
 
 > ⚠️ Env local : FP tourne en **zip 2.1.3 patché** (2 lignes dans `Object.lua`, cf. `99` bug FP).
@@ -46,5 +48,3 @@ Le mod vit dans [`../factoryforge/`](../factoryforge). Pour l'essayer :
 4. Un blueprint atterrit dans la main → le poser sur une surface vide.
 
 Voir les critères d'acceptation M2 dans [03-m2-naive-placement.md](03-m2-naive-placement.md).
-- [ ] M3 — Main-bus + belts + inserters
-- [ ] M4 — Raffinements (électricité, multi-belt, beacons, undergrounds)
