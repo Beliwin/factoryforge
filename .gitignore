@@ -1,0 +1,7 @@
+# Clone de Factory Planner (reference) + backups de zips FP — pas notre code
+vendor/
+
+# Divers
+*.log
+.DS_Store
+Thumbs.db

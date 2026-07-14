@@ -1,0 +1,12 @@
+{
+    "name": "factoryforge",
+    "version": "0.1.0",
+    "title": "FactoryForge",
+    "author": "jeremy",
+    "factorio_version": "2.1",
+    "description": "Genere un blueprint posable a partir du plan de production courant de Factory Planner.",
+    "dependencies": [
+        "base >= 2.1.7",
+        "? factoryplanner >= 2.1.1"
+    ]
+}
